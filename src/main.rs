@@ -1,11 +1,11 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
     fs::File,
     io::{self, BufReader},
     path::PathBuf,
 };
-use strum::{Display, EnumString};
 use thiserror::Error;
 
 #[derive(Parser, Debug)]
@@ -21,20 +21,19 @@ struct Args {
     #[arg(short = 'N', long)]
     no_dirs: bool,
 
-    #[arg(short = 'd', long, default_value_t = RecentOrder::Unchanged)]
+    #[arg(short = 'd', long)]
     order: RecentOrder,
 }
 fn get_default_config_root() -> PathBuf {
     dirs::config_dir().expect("No config path!").join("Code")
 }
 
-#[derive(Debug, Clone, EnumString, Display, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 enum RecentOrder {
-    #[strum(serialize = "unchanged")]
+    #[default]
     Unchanged,
-    #[strum(serialize = "files-first")]
     FilesFirst,
-    #[strum(serialize = "dirs-first")]
     DirsFirst,
 }
 
