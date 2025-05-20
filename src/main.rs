@@ -8,13 +8,23 @@ struct Args {
     /// Name of the person to greet
     #[arg(short, long)]
     config_root: Option<PathBuf>,
+
+    #[arg(short, long)]
+    no_files: bool,
+
+    #[arg(short = 'N', long)]
+    no_dirs: bool,
 }
 fn get_default_config_root() -> PathBuf {
     dirs::config_dir().expect("No config path").join("Code")
 }
 
 fn main() {
-    let Args { config_root } = Args::parse();
+    let Args {
+        config_root,
+        no_files,
+        no_dirs,
+    } = Args::parse();
     let config_root = config_root.unwrap_or_else(get_default_config_root);
     let storage_path = config_root.join("User/globalStorage/storage.json");
     let file = File::open(storage_path).unwrap();
@@ -59,7 +69,9 @@ fn main() {
         .unwrap()
         .iter()
         .filter(|item| {
-            item.get("id").and_then(|s| s.as_str()) == Some("openRecentFolder")
+            let id = item.get("id").and_then(|s| s.as_str());
+            (!no_files && id == Some("openRecentFolder")
+                || !no_dirs && id == Some("openRecentFile"))
                 && item.get("enabled").and_then(|s| s.as_bool()) == Some(true)
         })
         .map(|item| {
