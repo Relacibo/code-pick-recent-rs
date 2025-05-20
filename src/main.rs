@@ -1,10 +1,22 @@
+use clap::Parser;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
-use std::{fs::File, io::BufReader};
+use std::{fs::File, io::BufReader, path::PathBuf};
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    #[arg(short, long)]
+    config_root: Option<PathBuf>,
+}
+fn get_default_config_root() -> PathBuf {
+    dirs::config_dir().expect("No config path").join("Code")
+}
 
 fn main() {
-    let storage_path = dirs::config_dir()
-        .expect("No config path")
-        .join("Code/User/globalStorage/storage.json");
+    let Args { config_root } = Args::parse();
+    let config_root = config_root.unwrap_or_else(get_default_config_root);
+    let storage_path = config_root.join("User/globalStorage/storage.json");
     let file = File::open(storage_path).unwrap();
     let reader = BufReader::new(file);
 

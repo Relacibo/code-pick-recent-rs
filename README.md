@@ -9,10 +9,10 @@ cargo install --path .
 ## Usage
 Example with wofi:
 ```bash
-code-pick-recent-rs | wofi --dmenu | xargs code
+~/.cargo/bin/code-pick-recent-rs | wofi --dmenu | xargs -r code
 ```
 
 I use it as a bind in my `hyperland.conf`:
 ```bash
-bind = $mainMod SHIFT, C, exec, code-pick-recent-rs | wofi --dmenu | xargs code
+bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/code-pick-recent-rs | wofi --dmenu | xargs -r code
 ```
