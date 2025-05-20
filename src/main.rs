@@ -16,10 +16,10 @@ struct Args {
     config_root: Option<PathBuf>,
 
     #[arg(short, long)]
-    no_files: bool,
+    with_files: bool,
 
-    #[arg(short = 'N', long)]
-    no_dirs: bool,
+    #[arg(short = 'W', long)]
+    with_dirs: bool,
 
     #[arg(short = 'd', long)]
     order: RecentOrder,
@@ -40,8 +40,8 @@ enum RecentOrder {
 fn main() -> Result<(), Error> {
     let Args {
         config_root,
-        no_files,
-        no_dirs,
+        with_files,
+        with_dirs,
         order,
     } = Args::parse();
     let config_root = config_root.unwrap_or_else(get_default_config_root);
@@ -77,10 +77,13 @@ fn main() -> Result<(), Error> {
         .iter()
         .filter_map(|item| {
             let id = item.as_object_get("id").ok()?.as_str()?;
-            if (no_files || id != "openRecentFile") && (no_dirs || id != "openRecentFolder") {
+            let keep_id =
+                with_files && id == "openRecentFile" || with_dirs && id == "openRecentFolder";
+            if !keep_id {
                 return None;
             }
-            if !item.get("enabled").and_then(|s| s.as_bool())? {
+            let is_enabled = item.get("enabled").and_then(|s| s.as_bool())?;
+            if !is_enabled {
                 return None;
             }
             let val = item
