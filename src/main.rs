@@ -1,11 +1,10 @@
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
-use std::{fs::File, io::BufReader, process};
+use std::{fs::File, io::BufReader};
 
 fn main() {
     let storage_path = dirs::config_dir()
         .expect("No config path")
         .join("Code/User/globalStorage/storage.json");
-    dbg!(&storage_path);
     let file = File::open(storage_path).unwrap();
     let reader = BufReader::new(file);
 
@@ -64,18 +63,6 @@ fn main() {
                 .unwrap()
         })
         .collect::<Vec<_>>();
-    for (i, uri) in uris.iter().enumerate() {
-        println!("{i}: {uri}");
-    }
-    let input: String = text_io::read!();
-    let num: usize = input.parse().expect("Need index!");
-    if num >= uris.len() {
-        panic!("Index too big!");
-    }
-
-    let path = uris[num];
-
-    println!("Opening {path} in VSCode!");
-
-    process::Command::new("code").arg(path).output().unwrap();
+    let out = uris.join("\n");
+    println!("{out}");
 }
