@@ -1,11 +1,5 @@
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
-use std::{
-    fs::{self, File},
-    io::BufReader,
-    os::unix::process::CommandExt,
-    path::PathBuf,
-    process,
-};
+use std::{fs::File, io::BufReader, process};
 
 fn main() {
     let storage_path = dirs::config_dir()
