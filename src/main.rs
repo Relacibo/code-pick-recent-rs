@@ -21,7 +21,7 @@ struct Args {
     #[arg(short = 'W', long)]
     with_dirs: bool,
 
-    #[arg(short = 'd', long)]
+    #[arg(short = 'd', long, default_value_t, value_enum)]
     order: RecentOrder,
 }
 fn get_default_config_root() -> PathBuf {
