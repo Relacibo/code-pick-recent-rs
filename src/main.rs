@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
     fs::{self, File},
@@ -84,8 +83,5 @@ fn main() {
 
     println!("Opening {path} in VSCode!");
 
-    process::Command::new("code")
-        .arg(path)
-        .output()
-        .unwrap();
+    process::Command::new("code").arg(path).output().unwrap();
 }
