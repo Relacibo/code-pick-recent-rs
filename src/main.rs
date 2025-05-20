@@ -5,6 +5,7 @@ use std::{
     io::{self, BufReader},
     path::PathBuf,
 };
+use strum::{Display, EnumString};
 use thiserror::Error;
 
 #[derive(Parser, Debug)]
@@ -20,11 +21,21 @@ struct Args {
     #[arg(short = 'N', long)]
     no_dirs: bool,
 
-    #[arg(short = 'F', long)]
-    files_first: bool,
+    #[arg(short = 'd', long, default_value_t = RecentOrder::Unchanged)]
+    order: RecentOrder,
 }
 fn get_default_config_root() -> PathBuf {
     dirs::config_dir().expect("No config path!").join("Code")
+}
+
+#[derive(Debug, Clone, EnumString, Display, PartialEq, Eq)]
+enum RecentOrder {
+    #[strum(serialize = "unchanged")]
+    Unchanged,
+    #[strum(serialize = "files-first")]
+    FilesFirst,
+    #[strum(serialize = "dirs-first")]
+    DirsFirst,
 }
 
 fn main() -> Result<(), Error> {
@@ -32,7 +43,7 @@ fn main() -> Result<(), Error> {
         config_root,
         no_files,
         no_dirs,
-        files_first,
+        order,
     } = Args::parse();
     let config_root = config_root.unwrap_or_else(get_default_config_root);
     let storage_path = config_root.join("User/globalStorage/storage.json");
@@ -88,20 +99,24 @@ fn main() -> Result<(), Error> {
         })
         .collect::<Vec<_>>();
 
-    let mut out = if files_first {
-        let (files, dirs): (Vec<_>, Vec<_>) =
-            uris.iter().partition(|e| e.t == RecentEntryType::File);
-        files
+    let mut out = match order {
+        RecentOrder::Unchanged => uris
             .into_iter()
-            .chain(dirs)
             .map(|e| e.val)
             .collect::<Vec<_>>()
-            .join("\n")
-    } else {
-        uris.into_iter()
-            .map(|e| e.val)
-            .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n"),
+        RecentOrder::FilesFirst | RecentOrder::DirsFirst => {
+            let (first, second): (Vec<_>, Vec<_>) = uris.iter().partition(|e| {
+                // want_file xnor is_file
+                !((order == RecentOrder::FilesFirst) ^ (e.t == RecentEntryType::File))
+            });
+            first
+                .into_iter()
+                .chain(second)
+                .map(|e| e.val)
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     };
     out.push('\0');
     println!("{out}");
