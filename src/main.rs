@@ -63,6 +63,7 @@ fn main() {
                 .unwrap()
         })
         .collect::<Vec<_>>();
-    let out = uris.join("\n");
+    let mut out = uris.join("\n");
+    out.push('\0');
     println!("{out}");
 }
