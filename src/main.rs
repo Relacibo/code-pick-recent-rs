@@ -120,7 +120,7 @@ fn digest_dir_entry(path: &Path) -> Result<(), Error> {
     let val = urlencoding::decode(val)?;
 
     if &val[..7] == "file://" {
-        println!("{}\0", &val[7..].replace(" ", "\\ "));
+        println!("{}", &val[7..].replace(" ", "\\ "));
     }
     Ok(())
 }
@@ -214,7 +214,7 @@ fn collect_items_in_menu_settings(
             continue;
         };
         let val = val.replace(" ", "\\ ");
-        println!("{val}\0");
+        println!("{val}");
     }
     Ok(())
 }
