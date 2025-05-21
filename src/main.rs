@@ -4,11 +4,9 @@ use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
     fs::{self, DirEntry, File},
-    io::{self, BufReader, Read},
+    io::{BufReader, Read},
     path::{Path, PathBuf},
-    string::FromUtf8Error,
     time::{Duration, SystemTime},
-    usize,
 };
 
 #[derive(Parser, Debug)]
