@@ -1,31 +1,43 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
-    fs::File,
-    io::{self, BufReader},
-    path::PathBuf,
+    fs::{self, DirEntry, File},
+    io::{self, BufReader, Read},
+    path::{Path, PathBuf},
+    string::FromUtf8Error,
+    time::SystemTime,
 };
 use thiserror::Error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
 struct Args {
-    /// Name of the person to greet
     #[arg(short, long)]
     config_root: Option<PathBuf>,
 
-    #[arg(short, long)]
-    with_files: bool,
-
-    #[arg(short = 'W', long)]
-    with_dirs: bool,
-
-    #[arg(short = 'd', long, default_value_t, value_enum)]
-    order: RecentOrder,
+    #[command(subcommand)]
+    command: Command,
 }
+
 fn get_default_config_root() -> PathBuf {
     dirs::config_dir().expect("No config path!").join("Code")
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum Command {
+    Recent {
+        #[arg(short = 'w', long)]
+        with_files: bool,
+        #[arg(short = 'W', long)]
+        with_dirs: bool,
+        #[arg(short = 'a', long)]
+        all: bool,
+        #[arg(short = 'd', long, default_value_t, value_enum)]
+        order: RecentOrder,
+    },
+    Workspaces,
 }
 
 #[derive(Debug, Clone, Default, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,15 +52,102 @@ enum RecentOrder {
 fn main() -> Result<(), Error> {
     let Args {
         config_root,
-        with_files,
-        with_dirs,
-        order,
+        command,
     } = Args::parse();
     let config_root = config_root.unwrap_or_else(get_default_config_root);
-    let storage_path = config_root.join("User/globalStorage/storage.json");
+
+    match command {
+        Command::Recent {
+            with_files,
+            with_dirs,
+            all,
+            order,
+        } => {
+            collect_items_in_menu_settings(
+                config_root,
+                all || with_files,
+                all || with_dirs,
+                order,
+            )?;
+        }
+        Command::Workspaces => {
+            collect_items_in_workspaces(config_root)?;
+        }
+    }
+    // println!("\0");
+    Ok(())
+}
+
+fn collect_items_in_workspaces(mut storage_path: PathBuf) -> Result<(), Error> {
+    storage_path.push("User/workspaceStorage");
+    let mut entries = fs::read_dir(&storage_path)?
+        .filter_map(|entry| match prepare_dir_entry(entry) {
+            Err(err) => {
+                eprintln!("Error at: {}", &storage_path.as_os_str().to_string_lossy());
+                eprintln!("Error reading workspace entry! {err}");
+                None
+            }
+            Ok(entry) => Some(entry),
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|e1, e2| e1.last_modified_at.cmp(&e2.last_modified_at).reverse());
+    for FolderEntry { path, .. } in entries {
+        let path = path.join("workspace.json");
+        if let Err(err) = digest_dir_entry(&path) {
+            eprintln!("Error with file: {}", &path.as_os_str().to_string_lossy());
+            eprintln!("Error digesting workspace entry! {err}");
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct FolderEntry {
+    path: PathBuf,
+    last_modified_at: SystemTime,
+}
+
+fn digest_dir_entry(path: &Path) -> Result<(), Error> {
+    let mut file = File::open(path)?;
+    let mut v: Vec<u8> = Vec::new();
+    file.read_to_end(&mut v)?;
+    let value: sonic_rs::Value = sonic_rs::from_slice(&v)?;
+
+    let Ok(field) = value.as_object_get("folder") else {
+        return Ok(());
+    };
+    let val = field.as_str().ok_or(Error::FailedUseAsStr)?;
+
+    let val = urlencoding::decode(val)?;
+
+    if &val[..7] == "file://" {
+        println!("{}\0", &val[7..].replace(" ", "\\ "));
+    }
+    Ok(())
+}
+
+fn prepare_dir_entry(entry: Result<DirEntry, std::io::Error>) -> Result<FolderEntry, Error> {
+    let entry = entry?;
+    if !entry.file_type()?.is_dir() {
+        return Err(Error::DidntExpectFileType);
+    }
+    let last_modified_at = entry.metadata()?.modified()?;
+    let path = entry.path();
+    Ok(FolderEntry {
+        path,
+        last_modified_at,
+    })
+}
+
+fn collect_items_in_menu_settings(
+    mut storage_path: PathBuf,
+    with_files: bool,
+    with_dirs: bool,
+    order: RecentOrder,
+) -> Result<(), Error> {
+    storage_path.push("User/globalStorage/storage.json");
     let file = File::open(storage_path)?;
     let reader = BufReader::new(file);
-
     let value: sonic_rs::Value = sonic_rs::from_reader(reader)?;
     let items = value
         .as_object_get("lastKnownMenubarData")?
@@ -75,7 +174,7 @@ fn main() -> Result<(), Error> {
         .as_array()
         .ok_or(Error::FailedUseAsArray)?
         .iter()
-        .filter_map(|item| {
+        .filter_map(move |item| {
             let id = item.as_object_get("id").ok()?.as_str()?;
             let keep_id =
                 with_files && id == "openRecentFile" || with_dirs && id == "openRecentFolder";
@@ -98,30 +197,22 @@ fn main() -> Result<(), Error> {
                 _ => unreachable!(),
             };
             Some(RecentEntry { t, val })
-        })
-        .collect::<Vec<_>>();
+        });
 
-    let mut out = match order {
-        RecentOrder::Unchanged => uris
-            .into_iter()
-            .map(|e| e.val)
-            .collect::<Vec<_>>()
-            .join("\n"),
+    let uris: Box<dyn Iterator<Item = _>> = match order {
+        RecentOrder::Unchanged => Box::new(uris),
         RecentOrder::FilesFirst | RecentOrder::DirsFirst => {
-            let (first, second): (Vec<_>, Vec<_>) = uris.iter().partition(|e| {
+            let (first, second): (Vec<_>, Vec<_>) = uris.partition(|e| {
                 // want_file xnor is_file
                 !((order == RecentOrder::FilesFirst) ^ (e.t == RecentEntryType::File))
             });
-            first
-                .into_iter()
-                .chain(second)
-                .map(|e| e.val)
-                .collect::<Vec<_>>()
-                .join("\n")
+            Box::new(first.into_iter().chain(second))
         }
     };
-    out.push('\0');
-    println!("{out}");
+
+    for RecentEntry { val, .. } in uris {
+        println!("{val}\0");
+    }
     Ok(())
 }
 
@@ -157,10 +248,16 @@ enum Error {
     FailedUseAsObject,
     #[error("Failed to use value as array.")]
     FailedUseAsArray,
+    #[error("Failed to use value as str.")]
+    FailedUseAsStr,
     #[error("Couldn't get value in object. Key: {}", .0)]
     FailedGettingKey(String),
     #[error("IO Error: {}", .0)]
     StdIo(#[from] io::Error),
     #[error("sonic-rs Error: {}", .0)]
     SonicRs(#[from] sonic_rs::error::Error),
+    #[error("Didn't expect file type.")]
+    DidntExpectFileType,
+    #[error("From Utf8 Error")]
+    FromUtf8(#[from] FromUtf8Error),
 }
