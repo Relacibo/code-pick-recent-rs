@@ -74,7 +74,6 @@ fn main() -> Result<(), Error> {
             collect_items_in_workspaces(config_root)?;
         }
     }
-    // println!("\0");
     Ok(())
 }
 
