@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
@@ -6,9 +7,9 @@ use std::{
     io::{self, BufReader, Read},
     path::{Path, PathBuf},
     string::FromUtf8Error,
-    time::SystemTime,
+    time::{Duration, SystemTime},
+    usize,
 };
-use thiserror::Error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -32,12 +33,17 @@ enum Command {
         with_files: bool,
         #[arg(short = 'W', long)]
         with_dirs: bool,
-        #[arg(short = 'a', long)]
+        #[arg(short, long)]
         all: bool,
         #[arg(short = 'd', long, default_value_t, value_enum)]
         order: RecentOrder,
     },
-    Workspaces,
+    Workspaces {
+        #[arg(short = 'x', long)]
+        max_age_days: Option<u32>,
+        #[arg(short, long)]
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Debug, Clone, Default, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,7 +55,7 @@ enum RecentOrder {
     DirsFirst,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> anyhow::Result<()> {
     let Args {
         config_root,
         command,
@@ -70,15 +76,36 @@ fn main() -> Result<(), Error> {
                 order,
             )?;
         }
-        Command::Workspaces => {
-            collect_items_in_workspaces(config_root)?;
+        Command::Workspaces {
+            max_age_days,
+            limit,
+        } => {
+            collect_items_in_workspaces(config_root, max_age_days, limit)?;
         }
     }
     Ok(())
 }
 
-fn collect_items_in_workspaces(mut storage_path: PathBuf) -> Result<(), Error> {
+fn collect_items_in_workspaces(
+    mut storage_path: PathBuf,
+    max_age_days: Option<u32>,
+    limit: Option<usize>,
+) -> anyhow::Result<()> {
     storage_path.push("User/workspaceStorage");
+
+    let min_system_time = if let Some(max_age_days) = max_age_days {
+        const NUM_SECONDS_IN_DAY: u64 = 86400;
+        Some(
+            SystemTime::now()
+                .checked_sub(Duration::from_secs(
+                    (max_age_days as u64) * NUM_SECONDS_IN_DAY,
+                ))
+                .ok_or_else(|| anyhow!("`max-age-days` too big"))?,
+        )
+    } else {
+        Default::default()
+    };
+
     let mut entries = fs::read_dir(&storage_path)?
         .filter_map(|entry| match prepare_dir_entry(entry) {
             Err(err) => {
@@ -86,11 +113,20 @@ fn collect_items_in_workspaces(mut storage_path: PathBuf) -> Result<(), Error> {
                 eprintln!("Error reading workspace entry! {err}");
                 None
             }
-            Ok(entry) => Some(entry),
+            Ok(entry) => {
+                let is_recent_enough = min_system_time
+                    .map(|min_system_time| entry.last_modified_at > min_system_time)
+                    .unwrap_or(true);
+                is_recent_enough.then_some(entry)
+            }
         })
         .collect::<Vec<_>>();
+
     entries.sort_by(|e1, e2| e1.last_modified_at.cmp(&e2.last_modified_at).reverse());
-    for FolderEntry { path, .. } in entries {
+
+    let limit = limit.unwrap_or(usize::MAX);
+
+    for FolderEntry { path, .. } in entries.into_iter().take(limit) {
         let path = path.join("workspace.json");
         if let Err(err) = digest_dir_entry(&path) {
             eprintln!("Error with file: {}", &path.as_os_str().to_string_lossy());
@@ -106,7 +142,7 @@ struct FolderEntry {
     last_modified_at: SystemTime,
 }
 
-fn digest_dir_entry(path: &Path) -> Result<(), Error> {
+fn digest_dir_entry(path: &Path) -> anyhow::Result<()> {
     let mut file = File::open(path)?;
     let mut v: Vec<u8> = Vec::new();
     file.read_to_end(&mut v)?;
@@ -115,7 +151,9 @@ fn digest_dir_entry(path: &Path) -> Result<(), Error> {
     let Ok(field) = value.as_object_get("folder") else {
         return Ok(());
     };
-    let val = field.as_str().ok_or(Error::FailedUseAsStr)?;
+    let val = field
+        .as_str()
+        .ok_or_else(|| anyhow!("Failed using field in json as a string!"))?;
 
     let val = urlencoding::decode(val)?;
 
@@ -125,10 +163,10 @@ fn digest_dir_entry(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn prepare_dir_entry(entry: Result<DirEntry, std::io::Error>) -> Result<FolderEntry, Error> {
+fn prepare_dir_entry(entry: Result<DirEntry, std::io::Error>) -> anyhow::Result<FolderEntry> {
     let entry = entry?;
     if !entry.file_type()?.is_dir() {
-        return Err(Error::DidntExpectFileType);
+        return Err(anyhow!("Didn't expect file type!"));
     }
     let last_modified_at = entry.metadata()?.modified()?;
     let path = entry.path();
@@ -143,7 +181,7 @@ fn collect_items_in_menu_settings(
     with_files: bool,
     with_dirs: bool,
     order: RecentOrder,
-) -> Result<(), Error> {
+) -> anyhow::Result<()> {
     storage_path.push("User/globalStorage/storage.json");
     let file = File::open(storage_path)?;
     let reader = BufReader::new(file);
@@ -154,7 +192,7 @@ fn collect_items_in_menu_settings(
         .as_object_get("File")?
         .as_object_get("items")?
         .as_array()
-        .ok_or(Error::FailedUseAsArray)?;
+        .ok_or_else(|| anyhow!("Failed using field in json as an array!"))?;
     let recent = items
         .iter()
         .find(|item| {
@@ -171,7 +209,7 @@ fn collect_items_in_menu_settings(
         .as_object_get("submenu")?
         .as_object_get("items")?
         .as_array()
-        .ok_or(Error::FailedUseAsArray)?
+        .ok_or_else(|| anyhow!("Failed using field in json as an object!"))?
         .iter()
         .filter_map(move |item| {
             let id = item.as_object_get("id").ok()?.as_str()?;
@@ -231,36 +269,16 @@ struct RecentEntry<'a> {
     val: &'a str,
 }
 trait SonicRsValueExtensions {
-    fn as_object_get<'a>(&'a self, key: &str) -> Result<&'a sonic_rs::Value, Error>;
+    fn as_object_get<'a>(&'a self, key: &str) -> anyhow::Result<&'a sonic_rs::Value>;
 }
 
 impl SonicRsValueExtensions for sonic_rs::Value {
-    fn as_object_get<'a>(&'a self, key: &str) -> Result<&'a sonic_rs::Value, Error> {
+    fn as_object_get<'a>(&'a self, key: &str) -> anyhow::Result<&'a sonic_rs::Value> {
         let res = self
             .as_object()
-            .ok_or(Error::FailedUseAsObject)?
+            .ok_or_else(|| anyhow!("Failed using field in json as an object!"))?
             .get(&key)
-            .ok_or(Error::FailedGettingKey(key.to_owned()))?;
+            .ok_or_else(|| anyhow!("Failed getting field in json!"))?;
         Ok(res)
     }
-}
-
-#[derive(Debug, Error)]
-enum Error {
-    #[error("Failed to use value as object.")]
-    FailedUseAsObject,
-    #[error("Failed to use value as array.")]
-    FailedUseAsArray,
-    #[error("Failed to use value as str.")]
-    FailedUseAsStr,
-    #[error("Couldn't get value in object. Key: {}", .0)]
-    FailedGettingKey(String),
-    #[error("IO Error: {}", .0)]
-    StdIo(#[from] io::Error),
-    #[error("sonic-rs Error: {}", .0)]
-    SonicRs(#[from] sonic_rs::error::Error),
-    #[error("Didn't expect file type.")]
-    DidntExpectFileType,
-    #[error("From Utf8 Error")]
-    FromUtf8(#[from] FromUtf8Error),
 }

@@ -1,5 +1,5 @@
-# code-pick-recent-rs
-Input for e.g. wofi to select a recently opened folder in vscode.
+# code-pick-rs
+Input for e.g. wofi for selecting from a list of recently opened folders/files or a list of workspaces to be opened in vscode.
 
 ## Install
 ```bash
@@ -9,12 +9,13 @@ cargo install --path .
 ## Usage
 Example with wofi:
 ```bash
-~/.cargo/bin/code-pick-recent-rs recent -a | wofi --dmenu | xargs -r code
+codep recent -a | wofi --dmenu | xargs -r code
 ```
 
 I use it as a bind in my `hyperland.conf`:
 ```bash
-bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/code-pick-recent-rs recent -a | wofi --dmenu | xargs -r code
+bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | wofi --dmenu | xargs -r code
+bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -x 365 | wofi --dmenu | xargs -r code
 ```
 
-`code-pick-recent-rs --help` for more info!
+`codep --help` for more info!
