@@ -1,5 +1,5 @@
 # code-pick-rs
-Input for e.g. wofi for selecting from a list of recently opened folders/files or a list of workspaces to be opened in vscode.
+Input for e.g. wofi for selecting an entry from a list of recently opened folders/files or a list of workspaces to be opened in vscode.
 
 ## Install
 ```bash
