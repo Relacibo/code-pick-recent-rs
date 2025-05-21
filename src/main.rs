@@ -16,6 +16,9 @@ struct Args {
     #[arg(short, long)]
     config_root: Option<PathBuf>,
 
+    #[arg[short = '0', long]]
+    null_terminated: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -56,6 +59,7 @@ enum RecentOrder {
 fn main() -> anyhow::Result<()> {
     let Args {
         config_root,
+        null_terminated,
         command,
     } = Args::parse();
     let config_root = config_root
@@ -71,6 +75,7 @@ fn main() -> anyhow::Result<()> {
         } => {
             collect_items_in_menu_settings(
                 config_root,
+                null_terminated,
                 all || with_files,
                 all || with_dirs,
                 order,
@@ -80,7 +85,7 @@ fn main() -> anyhow::Result<()> {
             max_age_days,
             limit,
         } => {
-            collect_items_in_workspaces(config_root, max_age_days, limit)?;
+            collect_items_in_workspaces(config_root, null_terminated, max_age_days, limit)?;
         }
     }
     Ok(())
@@ -88,6 +93,7 @@ fn main() -> anyhow::Result<()> {
 
 fn collect_items_in_workspaces(
     mut storage_path: PathBuf,
+    null_terminated: bool,
     max_age_days: Option<u32>,
     limit: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -128,7 +134,7 @@ fn collect_items_in_workspaces(
 
     for FolderEntry { path, .. } in entries.into_iter().take(limit) {
         let path = path.join("workspace.json");
-        if let Err(err) = digest_dir_entry(&path) {
+        if let Err(err) = digest_dir_entry(null_terminated, &path) {
             eprintln!("Error with file: {}", &path.as_os_str().to_string_lossy());
             eprintln!("Error digesting workspace entry! {err}");
         }
@@ -142,7 +148,7 @@ struct FolderEntry {
     last_modified_at: SystemTime,
 }
 
-fn digest_dir_entry(path: &Path) -> anyhow::Result<()> {
+fn digest_dir_entry(null_terminated: bool, path: &Path) -> anyhow::Result<()> {
     let mut file = File::open(path)?;
     let mut v: Vec<u8> = Vec::new();
     file.read_to_end(&mut v)?;
@@ -158,7 +164,11 @@ fn digest_dir_entry(path: &Path) -> anyhow::Result<()> {
     let val = urlencoding::decode(val)?;
 
     if &val[..7] == "file://" {
-        println!("{}", &val[7..].replace(" ", "\\ "));
+        print!("{}", &val[7..]);
+        if null_terminated {
+            print!("\0");
+        }
+        println!();
     }
     Ok(())
 }
@@ -178,6 +188,7 @@ fn prepare_dir_entry(entry: Result<DirEntry, std::io::Error>) -> anyhow::Result<
 
 fn collect_items_in_menu_settings(
     mut storage_path: PathBuf,
+    null_terminated: bool,
     with_files: bool,
     with_dirs: bool,
     order: RecentOrder,
@@ -251,8 +262,11 @@ fn collect_items_in_menu_settings(
         let Ok(val) = urlencoding::decode(val).inspect_err(|err| eprintln!("{err}")) else {
             continue;
         };
-        let val = val.replace(" ", "\\ ");
-        println!("{val}");
+        print!("{val}");
+        if null_terminated {
+            print!("\0");
+        }
+        println!();
     }
     Ok(())
 }

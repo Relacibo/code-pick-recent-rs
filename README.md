@@ -7,15 +7,10 @@ cargo install --path .
 ```
 
 ## Usage
-Example with wofi:
+I use it as a bind in my `hyperland.conf` with wofi:
 ```bash
-codep recent -a | wofi --dmenu | xargs -r code
-```
-
-I use it as a bind in my `hyperland.conf`:
-```bash
-bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | wofi --dmenu | xargs -r code
-bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -x 365 | wofi --dmenu | xargs -r code
+bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | wofi --dmenu | xargs -r -I {} code --new-window "{}"
+bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -x 365 | wofi --dmenu | xargs -r -I {} code --new-window "{}"
 ```
 
 `codep --help` for more info!
