@@ -211,6 +211,10 @@ fn collect_items_in_menu_settings(
     };
 
     for RecentEntry { val, .. } in uris {
+        let Ok(val) = urlencoding::decode(val).inspect_err(|err| eprintln!("{err}")) else {
+            continue;
+        };
+        let val = val.replace(" ", "\\ ");
         println!("{val}\0");
     }
     Ok(())
