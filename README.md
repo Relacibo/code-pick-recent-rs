@@ -19,3 +19,7 @@ bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -x 365 | wof
 ```
 
 `codep --help` for more info!
+
+## Environment Variables
+
+`CODEP_CONFIG_ROOT` (default: `~/.config/Code`) - Alternative config root

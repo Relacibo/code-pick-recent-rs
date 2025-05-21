@@ -60,7 +60,9 @@ fn main() -> anyhow::Result<()> {
         config_root,
         command,
     } = Args::parse();
-    let config_root = config_root.unwrap_or_else(get_default_config_root);
+    let config_root = config_root
+        .or_else(|| std::env::var("CODEP_CONFIG_ROOT").ok().map(PathBuf::from))
+        .unwrap_or_else(get_default_config_root);
 
     match command {
         Command::Recent {
