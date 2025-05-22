@@ -214,8 +214,7 @@ fn collect_items_in_menu_settings(
                 return false;
             };
             id == "submenuitem.MenubarRecentMenu"
-        })
-        .unwrap();
+        }).ok_or_else(||anyhow!("Didn't find menubar!"))?;
     let uris = recent
         .as_object_get("submenu")?
         .as_object_get("items")?
@@ -242,7 +241,10 @@ fn collect_items_in_menu_settings(
             let t = match id {
                 "openRecentFile" => RecentEntryType::File,
                 "openRecentFolder" => RecentEntryType::Dir,
-                _ => unreachable!(),
+                _ => {
+                    eprintln!("Unsupported entry type id!");
+                    return None;
+                }
             };
             Some(RecentEntry { t, val })
         });
