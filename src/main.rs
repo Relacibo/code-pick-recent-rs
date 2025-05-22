@@ -214,7 +214,8 @@ fn collect_items_in_menu_settings(
                 return false;
             };
             id == "submenuitem.MenubarRecentMenu"
-        }).ok_or_else(||anyhow!("Didn't find menubar!"))?;
+        })
+        .ok_or_else(|| anyhow!("Didn't find menubar!"))?;
     let uris = recent
         .as_object_get("submenu")?
         .as_object_get("items")?
