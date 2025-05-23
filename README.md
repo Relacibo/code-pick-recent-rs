@@ -1,5 +1,5 @@
 # code-pick-rs
-Input for e.g. [rofi](https://github.com/davatorium/rofi) for selecting an entry from a list of recently opened folders/files or a list of workspaces to be opened in vscode. The recent folders/files are extracted from `~/.config/Code/User/globalStorage/storage.json` and the workspaces from `~/.config/Code/User/workspaceStorage`.
+Input for e.g. [rofi](https://github.com/davatorium/rofi) for selecting an entry from a list of recently opened folders/files or a list of workspaces to be opened in vscode. The recent folders/files are extracted from `~/.config/Code/User/globalStorage/storage.json` and the workspaces from `~/.config/Code/User/workspaceStorage`. Please write an issue, if something doesn't display properly...
 
 ## Install
 ```bash

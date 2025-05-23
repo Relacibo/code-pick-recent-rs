@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
-    borrow::Cow,
+    fmt::{Debug, Display},
     fs::{self, DirEntry, File},
     io::{BufReader, Read},
     path::{Path, PathBuf},
@@ -19,6 +19,9 @@ struct Args {
 
     #[arg[short = '0', long]]
     null_terminated: bool,
+
+    #[arg[short = 'p', long]]
+    use_pango_markup: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -69,6 +72,7 @@ fn main() -> anyhow::Result<()> {
     let Args {
         config_root,
         null_terminated,
+        use_pango_markup,
         command,
     } = Args::parse();
     let config_root = config_root
@@ -101,6 +105,7 @@ fn main() -> anyhow::Result<()> {
             collect_items_in_workspaces(
                 config_root,
                 null_terminated,
+                use_pango_markup,
                 max_age_days,
                 limit,
                 all || with_dirs,
@@ -115,6 +120,7 @@ fn main() -> anyhow::Result<()> {
 fn collect_items_in_workspaces(
     mut storage_path: PathBuf,
     null_terminated: bool,
+    use_pango_markup: bool,
     max_age_days: Option<u32>,
     limit: Option<usize>,
     with_dirs: bool,
@@ -161,6 +167,7 @@ fn collect_items_in_workspaces(
         if let Err(err) = digest_dir_entry(
             &path,
             null_terminated,
+            use_pango_markup,
             with_dirs,
             with_remotes,
             extract_display_names,
@@ -181,6 +188,7 @@ struct FolderEntry {
 fn digest_dir_entry(
     path: &Path,
     null_terminated: bool,
+    use_pango_markup: bool,
     with_dirs: bool,
     with_remotes: bool,
     extract_display_names: bool,
@@ -204,31 +212,28 @@ fn digest_dir_entry(
         return Ok(());
     }
 
+    let clean_val = val.replace("\t", "").replace("\n", "").replace("\0", "");
+
     if extract_display_names {
-        let display_name = if starts_with_file {
-            Some(Cow::Borrowed(&val[7..]))
+        print!("{clean_val}\t");
+        if starts_with_file {
+            print!("{}", &val[7..]);
         } else if starts_with_remote {
             match extract_folder_name_from_remote_val(&val[16..]) {
                 Err(err) => {
                     eprintln!("Couldn't parse `vscode-remote` folder-string! ");
                     eprintln!("{err}");
-                    Some(val.clone())
+                    print!("{clean_val}");
                 }
-                Ok(folder_name) => Some(Cow::Owned(folder_name)),
+                Ok(r) => {
+                    print_display_info(&r, use_pango_markup);
+                }
             }
         } else {
-            None
-        };
-        print!(
-            "{}\t{}",
-            val.replace("\t", "").replace("\n", "").replace("\0", ""),
-            display_name.unwrap_or_else(|| val.clone())
-        );
+            print!("{clean_val}");
+        }
     } else {
-        print!(
-            "{}",
-            val.replace("\t", "").replace("\n", "").replace("\0", "")
-        );
+        print!("{clean_val}");
     };
 
     if null_terminated {
@@ -239,7 +244,7 @@ fn digest_dir_entry(
     Ok(())
 }
 
-fn extract_folder_name_from_remote_val(rest: &str) -> anyhow::Result<String> {
+fn extract_folder_name_from_remote_val(rest: &str) -> anyhow::Result<DisplayInfo> {
     let remote_type_end = rest
         .chars()
         .position(|c| c == '+')
@@ -248,25 +253,57 @@ fn extract_folder_name_from_remote_val(rest: &str) -> anyhow::Result<String> {
     let hex_end = rest[hex_start..]
         .chars()
         .position(|c| c == '/')
-        .ok_or_else(|| anyhow!("No slash found after first space!"))?;
+        .ok_or_else(|| anyhow!("No slash found after first space!"))?
+        + hex_start;
 
     let remote_type = &rest[..remote_type_end];
+    let remote_type = get_display_string_from_remote_type(remote_type);
 
-    let Ok(v) = (hex_start..hex_start + hex_end)
+    // Hex decode
+    let Ok(v) = (hex_start..hex_end)
         .step_by(2)
         .map(|i| u8::from_str_radix(&rest[i..i + 2], 16).map(|u| u as char))
         .collect::<Result<String, _>>()
     else {
-        return Ok(format!("{} ({remote_type})", rest[hex_start..].to_owned()));
+        return Ok(DisplayInfo {
+            val: rest[hex_start..].to_owned(),
+            hint: Some(DisplayInfoHint {
+                remote_type: remote_type.to_string(),
+                addition: None,
+            }),
+        });
     };
 
-    let display_string = extract_display_string_from_json_slice(remote_type, &v)
-        .unwrap_or_else(|| format!("{v} ({remote_type})"));
+    let info = if let Some((val, addition)) = hint_addition_from_json_slice(&v) {
+        DisplayInfo {
+            val,
+            hint: Some(DisplayInfoHint {
+                remote_type: remote_type.to_string(),
+                addition,
+            }),
+        }
+    } else {
+        DisplayInfo {
+            val: v,
+            hint: Some(DisplayInfoHint {
+                remote_type: remote_type.to_string(),
+                addition: None,
+            }),
+        }
+    };
 
-    Ok(display_string)
+    Ok(info)
 }
 
-fn extract_display_string_from_json_slice(remote_type: &str, v: &str) -> Option<String> {
+fn get_display_string_from_remote_type(remote_type: &str) -> &str {
+    match remote_type {
+        "dev-container" => "Dev Container",
+        "ssh-remote" => "SSH Remote",
+        v => v,
+    }
+}
+
+fn hint_addition_from_json_slice(v: &str) -> Option<(String, Option<&'static str>)> {
     let val: sonic_rs::Value = sonic_rs::from_str(v).ok()?;
     let obj = val.as_object()?;
     for path in ["hostPath", "repositoryPath", "volumeName"] {
@@ -276,20 +313,17 @@ fn extract_display_string_from_json_slice(remote_type: &str, v: &str) -> Option<
         let Some(s) = s.as_str() else {
             continue;
         };
-        return Some(format!(
-            "{s} ({remote_type}{})",
-            path_to_display_string(path)
-        ));
+        return Some((s.to_owned(), hint_addition_from_path(path)));
     }
     None
 }
 
-fn path_to_display_string(path: &str) -> &str {
+fn hint_addition_from_path(path: &str) -> Option<&'static str> {
     match path {
-        "hostPath" => "",
-        "repositoryPath" => ": repository",
-        "volumeName" => ": volume",
-        _ => ": unknown",
+        "hostPath" => None,
+        "repositoryPath" => Some("repository"),
+        "volumeName" => Some("volume"),
+        _ => Some("unknown"),
     }
 }
 
@@ -433,5 +467,55 @@ impl SonicRsValueExtensions for sonic_rs::Value {
             .as_str()
             .ok_or_else(|| anyhow!("Failed using field in json as a string!"))?;
         Ok(res)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DisplayInfo {
+    val: String,
+    hint: Option<DisplayInfoHint>,
+}
+
+fn print_display_info(val: &DisplayInfo, use_pango_markup: bool) {
+    let DisplayInfo { val, hint } = val;
+    print!("{val}");
+    if let Some(hint) = hint {
+        let DisplayInfoHint {
+            remote_type,
+            addition,
+        } = hint;
+        print!(" ");
+        if use_pango_markup {
+            print!("<small>");
+        }
+        print!("({remote_type}");
+        if let Some(addition) = addition {
+            print!("|{addition}");
+        }
+        if use_pango_markup {
+            print!("</small>");
+        }
+        print!(")");
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DisplayInfoHint {
+    remote_type: String,
+    addition: Option<&'static str>,
+}
+
+impl Display for DisplayInfoHint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let DisplayInfoHint {
+            remote_type,
+            addition,
+        } = self;
+        f.write_fmt(format_args!(" ({remote_type}"))?;
+        if let Some(addition) = addition {
+            f.write_fmt(format_args!("|{addition}"))?;
+        }
+        f.write_fmt(format_args!(")"))?;
+        Ok(())
     }
 }
