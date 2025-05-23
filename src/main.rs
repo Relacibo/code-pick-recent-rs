@@ -1,10 +1,11 @@
 use anyhow::anyhow;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::{
     fmt::{Debug, Display},
     fs::{self, DirEntry, File},
-    io::Read,
+    io::{BufReader, Read},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
@@ -35,22 +36,15 @@ fn get_default_config_root() -> PathBuf {
 
 #[derive(Clone, Debug, Subcommand)]
 enum Command {
-    History {
+    Recent {
+        #[arg(short = 'w', long)]
+        with_files: bool,
         #[arg(short = 'W', long)]
         with_dirs: bool,
-        #[arg(short = 'r', long)]
-        with_remotes: bool,
         #[arg(short, long)]
         all: bool,
-
-        #[arg(short = 'D', long)]
-        create_display_strings: bool,
-
-        #[arg(short = 'M', long)]
-        max_age_days: Option<u32>,
-
-        #[arg(short, long)]
-        limit: Option<usize>,
+        #[arg(short = 'd', long, default_value_t, value_enum)]
+        order: RecentOrder,
     },
     Workspaces {
         #[arg(short = 'W', long)]
@@ -69,6 +63,32 @@ enum Command {
         #[arg(short, long)]
         limit: Option<usize>,
     },
+    History {
+        #[arg(short = 'W', long)]
+        with_dirs: bool,
+        #[arg(short = 'r', long)]
+        with_remotes: bool,
+        #[arg(short, long)]
+        all: bool,
+
+        #[arg(short = 'D', long)]
+        create_display_strings: bool,
+
+        #[arg(short = 'M', long)]
+        max_age_days: Option<u32>,
+
+        #[arg(short, long)]
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone, Default, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RecentOrder {
+    #[default]
+    Unchanged,
+    FilesFirst,
+    DirsFirst,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -84,24 +104,19 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or_else(get_default_config_root);
 
     match command {
-        Command::History {
+        Command::Recent {
+            with_files,
             with_dirs,
-            with_remotes,
             all,
-            create_display_strings,
-            max_age_days,
-            limit,
+            order,
         } => {
             let all = global_all || all;
-            collect_items_in_history(
+            collect_items_in_menu_settings(
                 config_root,
-                limit,
-                max_age_days,
-                all || with_dirs,
-                all || with_remotes,
                 null_terminated,
-                create_display_strings,
-                use_pango_markup,
+                all || with_files,
+                all || with_dirs,
+                order,
             )?;
         }
         Command::Workspaces {
@@ -117,6 +132,26 @@ fn main() -> anyhow::Result<()> {
                 config_root,
                 max_age_days,
                 limit,
+                all || with_dirs,
+                all || with_remotes,
+                null_terminated,
+                create_display_strings,
+                use_pango_markup,
+            )?;
+        }
+        Command::History {
+            with_dirs,
+            with_remotes,
+            all,
+            create_display_strings,
+            max_age_days,
+            limit,
+        } => {
+            let all = global_all || all;
+            collect_items_in_history(
+                config_root,
+                limit,
+                max_age_days,
                 all || with_dirs,
                 all || with_remotes,
                 null_terminated,
@@ -406,6 +441,98 @@ fn get_data_from_dir_entry(entry: Result<DirEntry, std::io::Error>) -> anyhow::R
     })
 }
 
+fn collect_items_in_menu_settings(
+    mut storage_path: PathBuf,
+    null_terminated: bool,
+    with_files: bool,
+    with_dirs: bool,
+    order: RecentOrder,
+) -> anyhow::Result<()> {
+    storage_path.push("User/globalStorage/storage.json");
+    let file = File::open(storage_path)?;
+    let reader = BufReader::new(file);
+    let value: sonic_rs::Value = sonic_rs::from_reader(reader)?;
+    let items = value
+        .as_object_get_result("lastKnownMenubarData")?
+        .as_object_get_result("menus")?
+        .as_object_get_result("File")?
+        .as_object_get_result("items")?
+        .as_array()
+        .ok_or_else(|| anyhow!("Failed using field in json as an array!"))?;
+    let recent = items
+        .iter()
+        .find(|item| {
+            let Ok(id) = item.as_object_get_result("id") else {
+                return false;
+            };
+            let Some(id) = id.as_str() else {
+                return false;
+            };
+            id == "submenuitem.MenubarRecentMenu"
+        })
+        .ok_or_else(|| anyhow!("Didn't find menubar!"))?;
+    let uris = recent
+        .as_object_get_result("submenu")?
+        .as_object_get_result("items")?
+        .as_array()
+        .ok_or_else(|| anyhow!("Failed using field in json as an object!"))?
+        .iter()
+        .filter_map(move |item| {
+            let id = item.as_object_get_result("id").ok()?.as_str()?;
+            let keep_id =
+                with_files && id == "openRecentFile" || with_dirs && id == "openRecentFolder";
+            if !keep_id {
+                return None;
+            }
+            let is_enabled = item.get("enabled").and_then(|s| s.as_bool())?;
+            if !is_enabled {
+                return None;
+            }
+            let val = item
+                .as_object_get_result("uri")
+                .ok()?
+                .as_object_get_result("path")
+                .ok()?
+                .as_str()?;
+            let t = match id {
+                "openRecentFile" => RecentEntryType::File,
+                "openRecentFolder" => RecentEntryType::Dir,
+                _ => {
+                    eprintln!("Unsupported entry type id!");
+                    return None;
+                }
+            };
+            Some(RecentEntry { t, val })
+        });
+    let uris: Box<dyn Iterator<Item = _>> = match order {
+        RecentOrder::Unchanged => Box::new(uris),
+        RecentOrder::FilesFirst | RecentOrder::DirsFirst => {
+            let (first, second): (Vec<_>, Vec<_>) = uris.partition(|e| {
+                // want_file xnor is_file
+                !((order == RecentOrder::FilesFirst) ^ (e.t == RecentEntryType::File))
+            });
+            Box::new(first.into_iter().chain(second))
+        }
+    };
+    for RecentEntry { val, .. } in uris {
+        let Ok(val) = urlencoding::decode(val).inspect_err(|err| eprintln!("{err}")) else {
+            continue;
+        };
+        print!(
+            "{}",
+            val.trim()
+                .replace("\t", "")
+                .replace("\n", "")
+                .replace("\0", "")
+        );
+        if null_terminated {
+            print!("\0");
+        }
+        println!();
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_items_in_history(
     mut storage_path: PathBuf,
@@ -514,6 +641,18 @@ fn print_display_info(val: &DisplayInfo, use_pango_markup: bool) {
         }
         print!(")");
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecentEntryType {
+    File,
+    Dir,
+}
+
+#[derive(Debug, Clone)]
+struct RecentEntry<'a> {
+    t: RecentEntryType,
+    val: &'a str,
 }
 
 #[derive(Clone, Debug)]
