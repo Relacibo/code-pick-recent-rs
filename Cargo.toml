@@ -7,7 +7,7 @@ description = "CLI for getting a list of recently used VSCode files and workspac
 repository = "https://github.com/Relacibo/code-pick-rs"
 readme = "README.md"
 keywords = ["VSCode", "rofi", "cli", "tool"]
-categories = ["cli"]
+categories = ["development-tools"]
 
 [dependencies]
 sonic-rs = "0.5.1"
