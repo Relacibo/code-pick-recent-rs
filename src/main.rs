@@ -378,7 +378,7 @@ fn collect_items_in_menu_settings(
         let Ok(val) = urlencoding::decode(val).inspect_err(|err| eprintln!("{err}")) else {
             continue;
         };
-        print!("{val}");
+        print!("{}", val.trim());
         if null_terminated {
             print!("\0");
         }
