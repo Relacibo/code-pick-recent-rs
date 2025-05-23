@@ -15,8 +15,13 @@ cargo install --path .
 ## Usage
 I use it as a bind in my `hyperland.conf` with rofi:
 ```bash
-bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | rofi -dmenu | xargs -r -I {} code --new-window "{}"
-bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -aD -M 365 | rofi -dmenu -display-columns 2 | awk -F '\t' '{print $1}' | xargs -r -I {} code --folder-uri "{}"
+bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a \
+    | rofi -dmenu \
+    | xargs -r -I {} code --new-window "{}"
+bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep -p workspaces -aD -M 365 \
+    | rofi -dmenu -markup-rows -display-columns 2 \
+    | awk -F '\t' '{print $1}' \
+    | xargs -r -I {} code --folder-uri "{}"
 ```
 
 `codep --help` for more info!
