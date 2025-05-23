@@ -1,5 +1,5 @@
 # code-pick-rs
-Input for e.g. wofi for selecting an entry from a list of recently opened folders/files or a list of workspaces to be opened in vscode. The recent folders/files are extracted from `~/.config/Code/User/globalStorage/storage.json` and the workspaces from `~/.config/Code/User/workspaceStorage`.
+Input for e.g. [rofi](https://github.com/lbonn/rofi) for selecting an entry from a list of recently opened folders/files or a list of workspaces to be opened in vscode. The recent folders/files are extracted from `~/.config/Code/User/globalStorage/storage.json` and the workspaces from `~/.config/Code/User/workspaceStorage`.
 
 ## Install
 ```bash
@@ -7,10 +7,10 @@ cargo install --path .
 ```
 
 ## Usage
-I use it as a bind in my `hyperland.conf` with wofi:
+I use it as a bind in my `hyperland.conf` with rofi:
 ```bash
-bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | wofi --dmenu | xargs -r -I {} code --new-window "{}"
-bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -x 365 | wofi --dmenu | xargs -r -I {} code --new-window "{}"
+bind = $mainMod SHIFT, C, exec, ~/.cargo/bin/codep recent -a | rofi -dmenu | xargs -r -I {} code --new-window "{}"
+bindr = $mainMod&CTRL&SHIFT, C, exec, ~/.cargo/bin/codep workspaces -ax -M 365 | rofi -dmenu -display-columns 2 | sed 's/|/ /' | xargs -r -I {} code --folder-uri "{}"
 ```
 
 `codep --help` for more info!
