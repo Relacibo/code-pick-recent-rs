@@ -2,6 +2,12 @@
 name = "codep"
 version = "0.6.5"
 edition = "2024"
+license = "MIT"
+description = "CLI for getting a list of recently used VSCode files and workspaces."
+repository = "https://github.com/Relacibo/code-pick-rs"
+readme = "README.md"
+keywords = ["VSCode", "rofi", "cli", "tool"]
+categories = ["cli"]
 
 [dependencies]
 sonic-rs = "0.5.1"

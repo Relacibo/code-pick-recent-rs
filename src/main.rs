@@ -117,6 +117,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_items_in_workspaces(
     mut storage_path: PathBuf,
     null_terminated: bool,
