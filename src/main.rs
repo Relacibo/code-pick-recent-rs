@@ -51,8 +51,8 @@ enum Command {
         with_remotes: bool,
         #[arg(short, long)]
         all: bool,
-        #[arg(short = 'x', long)]
-        extract_display_names: bool,
+        #[arg(short = 'D', long)]
+        create_display_strings: bool,
     },
 }
 
@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
             with_dirs,
             with_remotes,
             all,
-            extract_display_names,
+            create_display_strings: extract_display_names,
         } => {
             collect_items_in_workspaces(
                 config_root,
