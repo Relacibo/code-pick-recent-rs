@@ -219,9 +219,16 @@ fn digest_dir_entry(
         } else {
             None
         };
-        print!("{val}\t{}", display_name.unwrap_or_else(|| val.clone()));
+        print!(
+            "{}\t{}",
+            val.replace("\t", "").replace("\n", "").replace("\0", ""),
+            display_name.unwrap_or_else(|| val.clone())
+        );
     } else {
-        print!("{val}");
+        print!(
+            "{}",
+            val.replace("\t", "").replace("\n", "").replace("\0", "")
+        );
     };
 
     if null_terminated {
@@ -253,13 +260,13 @@ fn extract_folder_name_from_remote_val(rest: &str) -> anyhow::Result<String> {
         return Ok(format!("{} ({remote_type})", rest[hex_start..].to_owned()));
     };
 
-    let host_path =
-        extract_from_json_slice(remote_type, &v).unwrap_or_else(|| format!("{v} ({remote_type})"));
+    let display_string = extract_display_string_from_json_slice(remote_type, &v)
+        .unwrap_or_else(|| format!("{v} ({remote_type})"));
 
-    Ok(host_path)
+    Ok(display_string)
 }
 
-fn extract_from_json_slice(remote_type: &str, v: &str) -> Option<String> {
+fn extract_display_string_from_json_slice(remote_type: &str, v: &str) -> Option<String> {
     let val: sonic_rs::Value = sonic_rs::from_str(v).ok()?;
     let obj = val.as_object()?;
     for path in ["hostPath", "repositoryPath", "volumeName"] {
@@ -378,7 +385,13 @@ fn collect_items_in_menu_settings(
         let Ok(val) = urlencoding::decode(val).inspect_err(|err| eprintln!("{err}")) else {
             continue;
         };
-        print!("{}", val.trim());
+        print!(
+            "{}",
+            val.trim()
+                .replace("\t", "")
+                .replace("\n", "")
+                .replace("\0", "")
+        );
         if null_terminated {
             print!("\0");
         }
